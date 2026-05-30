@@ -13,12 +13,12 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
+            "http://localhost:5180",
+            "http://127.0.0.1:5180",
         ],
     )
 
-    database_url: str = "postgresql+psycopg://clinica:clinica_dev_password@localhost:5432/clinica"
+    database_url: str = "postgresql+psycopg://clinica:clinica_dev_password@localhost:5434/clinica"
 
     jwt_secret_key: str = "change_me_in_local_env_with_at_least_32_chars"
     jwt_algorithm: str = "HS256"

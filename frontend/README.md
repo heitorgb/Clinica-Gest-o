@@ -15,7 +15,7 @@ Use Node.js 20.19 ou superior para rodar localmente fora do Docker.
 O painel ficara disponivel em:
 
 ```text
-http://localhost:5173
+http://localhost:5180
 ```
 
 ## Estrutura

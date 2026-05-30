@@ -13,13 +13,13 @@ uvicorn app.main:app --reload
 A documentacao interativa ficara disponivel em:
 
 ```text
-http://localhost:8000/api/v1/docs
+http://localhost:8008/api/v1/docs
 ```
 
 O health check fica em:
 
 ```text
-http://localhost:8000/api/v1/health
+http://localhost:8008/api/v1/health
 ```
 
 ## Banco de dados

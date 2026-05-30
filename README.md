@@ -95,9 +95,9 @@ O arquivo `.env` e opcional no ambiente local, porque o Compose ja possui valore
 Depois disso:
 
 ```text
-Web: http://localhost:5173
-API: http://localhost:8000/api/v1/health
-Docs: http://localhost:8000/api/v1/docs
+Web: http://localhost:5180
+API: http://localhost:8008/api/v1/health
+Docs: http://localhost:8008/api/v1/docs
 ```
 
 O backend aplica as migrations do Alembic automaticamente ao subir no ambiente local com Docker Compose.
