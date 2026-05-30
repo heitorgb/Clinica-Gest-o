@@ -92,6 +92,23 @@ docker compose -f infra/docker-compose.yml up -d
 
 O arquivo `.env` e opcional no ambiente local, porque o Compose ja possui valores padrao de desenvolvimento. Use `.env` quando quiser trocar portas, usuario ou senha do banco.
 
+As portas publicadas ficam no `.env`:
+
+```env
+FRONTEND_PORT=5180
+BACKEND_PORT=8008
+POSTGRES_PORT=5434
+```
+
+As portas internas dos containers ficam separadas:
+
+```env
+FRONTEND_CONTAINER_PORT=5180
+BACKEND_CONTAINER_PORT=8000
+```
+
+Em Docker, a API deve falar com o banco usando `db:5432`. A porta `POSTGRES_PORT` serve apenas para acesso externo ao PostgreSQL pelo servidor; a porta interna do Postgres fica fixa em `5432`.
+
 Depois disso:
 
 ```text
