@@ -1,0 +1,96 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings, get_settings
+from app.db.session import get_db
+from app.modules.auth.dependencies import require_permission
+from app.modules.integrations.schemas import (
+    AiGenerateRequest,
+    AiGenerateResponse,
+    AiPreviewRequest,
+    AiPreviewResponse,
+    IntegrationsStatus,
+    WhatsAppPreviewRequest,
+    WhatsAppPreviewResponse,
+)
+from app.modules.integrations.service import (
+    build_ai_preview,
+    build_whatsapp_preview,
+    generate_ai_response,
+    get_integrations_status,
+)
+from app.modules.mcp.repository import list_mcp_audit_logs
+from app.modules.mcp.schemas import McpAuditLogPublic
+from app.modules.users.models import User
+
+router = APIRouter(prefix="/integrations")
+require_integrations_access = require_permission("integrations:manage")
+
+
+@router.get("/status", response_model=IntegrationsStatus, summary="Lista status das integracoes")
+def get_integrations_status_endpoint(
+    settings: Annotated[Settings, Depends(get_settings)],
+    _current_user: Annotated[User, Depends(require_integrations_access)],
+) -> IntegrationsStatus:
+    return get_integrations_status(settings)
+
+
+@router.post("/ai/preview", response_model=AiPreviewResponse, summary="Prepara prompt de IA")
+def build_ai_preview_endpoint(
+    payload: AiPreviewRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _current_user: Annotated[User, Depends(require_integrations_access)],
+) -> AiPreviewResponse:
+    return build_ai_preview(payload, settings)
+
+
+@router.post(
+    "/ai/generate",
+    response_model=AiGenerateResponse,
+    summary="Gera resposta com IA",
+)
+def generate_ai_response_endpoint(
+    payload: AiGenerateRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _current_user: Annotated[User, Depends(require_integrations_access)],
+) -> AiGenerateResponse:
+    return generate_ai_response(payload, settings)
+
+
+@router.post(
+    "/whatsapp/preview",
+    response_model=WhatsAppPreviewResponse,
+    summary="Prepara mensagem de WhatsApp",
+)
+def build_whatsapp_preview_endpoint(
+    payload: WhatsAppPreviewRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _current_user: Annotated[User, Depends(require_integrations_access)],
+) -> WhatsAppPreviewResponse:
+    return build_whatsapp_preview(payload, settings)
+
+
+@router.get(
+    "/mcp/audit-logs",
+    response_model=list[McpAuditLogPublic],
+    summary="Lista auditoria do conector MCP",
+)
+def list_mcp_audit_logs_endpoint(
+    db: Annotated[Session, Depends(get_db)],
+    _current_user: Annotated[User, Depends(require_integrations_access)],
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    tool_name: str | None = None,
+    success: bool | None = None,
+    is_write_tool: bool | None = None,
+) -> list[McpAuditLogPublic]:
+    return list_mcp_audit_logs(
+        db,
+        skip=skip,
+        limit=limit,
+        tool_name=tool_name,
+        success=success,
+        is_write_tool=is_write_tool,
+    )

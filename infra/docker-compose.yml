@@ -1,0 +1,81 @@
+name: clinica-gestao
+
+services:
+  web:
+    build:
+      context: ../frontend
+    container_name: clinica-web
+    restart: unless-stopped
+    environment:
+      VITE_APP_NAME: Clinica Gestao
+      VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}/api/v1
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ../backend
+    container_name: clinica-api
+    restart: unless-stopped
+    environment:
+      APP_NAME: Clinica Gestao API
+      APP_ENV: local
+      APP_DEBUG: "true"
+      API_V1_PREFIX: /api/v1
+      BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clinica}:${POSTGRES_PASSWORD:-clinica_dev_password}@db:5432/${POSTGRES_DB:-clinica}
+      JWT_SECRET_KEY: change_me_in_local_env_with_at_least_32_chars
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      FIRST_SUPERUSER_NAME: ${FIRST_SUPERUSER_NAME:-Administrador}
+      FIRST_SUPERUSER_EMAIL: ${FIRST_SUPERUSER_EMAIL:-admin@example.com}
+      FIRST_SUPERUSER_PASSWORD: ${FIRST_SUPERUSER_PASSWORD:-admin12345}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_API_VERSION: ${ANTHROPIC_API_VERSION:-2023-06-01}
+      WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN:-}
+      MCP_CONNECTOR_ENABLED: ${MCP_CONNECTOR_ENABLED:-true}
+      MCP_WRITE_TOOLS_ENABLED: ${MCP_WRITE_TOOLS_ENABLED:-false}
+      MCP_AUDIT_ENABLED: ${MCP_AUDIT_ENABLED:-true}
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-false}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      MCP_ALLOW_QUERY_TOKEN: ${MCP_ALLOW_QUERY_TOKEN:-true}
+      MCP_SERVER_NAME: ${MCP_SERVER_NAME:-clinica-gestao}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ../backend/app:/app/app
+      - ../backend/alembic:/app/alembic
+      - ../backend/alembic.ini:/app/alembic.ini
+    command: >
+      sh -c "alembic upgrade head &&
+      python -m app.scripts.seed_admin &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: clinica-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-clinica}
+      POSTGRES_USER: ${POSTGRES_USER:-clinica}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinica_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinica} -d ${POSTGRES_DB:-clinica}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
