@@ -8,9 +8,9 @@ services:
     restart: unless-stopped
     environment:
       VITE_APP_NAME: Clinica Gestao
-      VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}/api/v1
+      VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8008}/api/v1
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "${FRONTEND_PORT:-5180}:5180"
     depends_on:
       - api
 
@@ -24,8 +24,8 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       API_V1_PREFIX: /api/v1
-      BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clinica}:${POSTGRES_PASSWORD:-clinica_dev_password}@db:5432/${POSTGRES_DB:-clinica}
+      BACKEND_CORS_ORIGINS: http://localhost:5180,http://127.0.0.1:5180
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clinica}:${POSTGRES_PASSWORD:-clinica_dev_password}@db:5434/${POSTGRES_DB:-clinica}
       JWT_SECRET_KEY: change_me_in_local_env_with_at_least_32_chars
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
@@ -46,7 +46,7 @@ services:
       MCP_ALLOW_QUERY_TOKEN: ${MCP_ALLOW_QUERY_TOKEN:-true}
       MCP_SERVER_NAME: ${MCP_SERVER_NAME:-clinica-gestao}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-8008}:8008"
     volumes:
       - ../backend/app:/app/app
       - ../backend/alembic:/app/alembic
@@ -54,7 +54,7 @@ services:
     command: >
       sh -c "alembic upgrade head &&
       python -m app.scripts.seed_admin &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload"
     depends_on:
       db:
         condition: service_healthy
@@ -68,7 +68,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-clinica}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinica_dev_password}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5434}:5434"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
