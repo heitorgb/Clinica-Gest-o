@@ -14,6 +14,7 @@ def mcp_client(
     return TestClient(
         create_app(
             Settings(
+                app_env="test",
                 mcp_connector_enabled=True,
                 mcp_write_tools_enabled=write_tools_enabled,
                 mcp_audit_enabled=False,

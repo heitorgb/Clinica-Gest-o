@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
+from app.modules.integrations.service import resolve_mcp_settings
 from app.modules.mcp.service import (
     handle_mcp_request,
     is_mcp_request_authorized,
@@ -21,7 +22,9 @@ async def mcp_endpoint(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
-    if not settings.mcp_connector_enabled:
+    mcp_settings = resolve_mcp_settings(db, settings)
+
+    if not mcp_settings.mcp_connector_enabled:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="MCP connector disabled.",
@@ -30,10 +33,10 @@ async def mcp_endpoint(
     remote_addr = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
-    if settings.mcp_auth_enabled and not settings.mcp_auth_token:
+    if mcp_settings.mcp_auth_enabled and not mcp_settings.mcp_auth_token:
         record_mcp_auth_failure(
             db,
-            settings,
+            mcp_settings,
             reason="MCP auth enabled without token.",
             remote_addr=remote_addr,
             user_agent=user_agent,
@@ -44,14 +47,14 @@ async def mcp_endpoint(
         )
 
     if not is_mcp_request_authorized(
-        settings,
+        mcp_settings,
         authorization=request.headers.get("authorization"),
         header_token=request.headers.get("x-mcp-token"),
         query_token=request.query_params.get("token"),
     ):
         record_mcp_auth_failure(
             db,
-            settings,
+            mcp_settings,
             reason="Invalid MCP token.",
             remote_addr=remote_addr,
             user_agent=user_agent,
@@ -79,7 +82,7 @@ async def mcp_endpoint(
     result = handle_mcp_request(
         payload,
         db,
-        settings,
+        mcp_settings,
         remote_addr=remote_addr,
         user_agent=user_agent,
     )

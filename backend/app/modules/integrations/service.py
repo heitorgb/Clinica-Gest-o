@@ -3,6 +3,8 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.modules.integrations.schemas import (
@@ -14,8 +16,16 @@ from app.modules.integrations.schemas import (
     IntegrationProvider,
     IntegrationProviderStatus,
     IntegrationsStatus,
+    McpConnectorSettingsPublic,
+    McpConnectorSettingsUpdate,
     WhatsAppPreviewRequest,
     WhatsAppPreviewResponse,
+)
+from app.modules.mcp.models import McpConnectorSettings
+from app.modules.mcp.repository import (
+    DEFAULT_MCP_SETTINGS_SCOPE,
+    get_mcp_connector_settings,
+    save_mcp_connector_settings,
 )
 
 AI_CAPABILITIES = [
@@ -27,6 +37,11 @@ WHATSAPP_CAPABILITIES = [
     "preparar mensagem de follow-up",
     "preparar lembrete financeiro",
     "base futura para automacoes",
+]
+MCP_CAPABILITIES = [
+    "consultar indicadores pelo Claude",
+    "executar acoes administrativas autorizadas",
+    "registrar auditoria de chamadas",
 ]
 
 AI_SYSTEM_PROMPTS = {
@@ -64,24 +79,139 @@ def provider_status(
     category: IntegrationCategory,
     configured: bool,
 ) -> IntegrationProviderStatus:
-    capabilities = AI_CAPABILITIES if category == "ai" else WHATSAPP_CAPABILITIES
+    capabilities_by_category = {
+        "ai": AI_CAPABILITIES,
+        "connector": MCP_CAPABILITIES,
+        "messaging": WHATSAPP_CAPABILITIES,
+    }
     return IntegrationProviderStatus(
         provider=provider,
         category=category,
         configured=configured,
         status="ready" if configured else "missing_config",
-        capabilities=capabilities,
+        capabilities=capabilities_by_category[category],
     )
 
 
-def get_integrations_status(settings: Settings) -> IntegrationsStatus:
+def get_integrations_status(
+    settings: Settings,
+    mcp_settings: Settings | None = None,
+) -> IntegrationsStatus:
+    effective_mcp_settings = mcp_settings or settings
+    mcp_configured = effective_mcp_settings.mcp_connector_enabled and (
+        not effective_mcp_settings.mcp_auth_enabled
+        or has_secret(effective_mcp_settings.mcp_auth_token)
+    )
+
     return IntegrationsStatus(
         providers=[
             provider_status("openai", "ai", has_secret(settings.openai_api_key)),
-            provider_status("anthropic", "ai", has_secret(settings.anthropic_api_key)),
             provider_status("whatsapp", "messaging", has_secret(settings.whatsapp_api_token)),
+            provider_status("mcp", "connector", mcp_configured),
         ]
     )
+
+
+def mask_secret(value: str | None) -> str | None:
+    if not has_secret(value):
+        return None
+
+    secret = value.strip()
+    if len(secret) <= 12:
+        return f"{secret[:2]}...{secret[-2:]}"
+
+    return f"{secret[:6]}...{secret[-4:]}"
+
+
+def create_mcp_settings_from_environment(settings: Settings) -> McpConnectorSettings:
+    return McpConnectorSettings(
+        scope=DEFAULT_MCP_SETTINGS_SCOPE,
+        connector_enabled=settings.mcp_connector_enabled,
+        write_tools_enabled=settings.mcp_write_tools_enabled,
+        audit_enabled=settings.mcp_audit_enabled,
+        auth_enabled=settings.mcp_auth_enabled,
+        auth_token=settings.mcp_auth_token,
+        allow_query_token=settings.mcp_allow_query_token,
+        server_name=settings.mcp_server_name,
+    )
+
+
+def apply_mcp_settings(settings: Settings, record: McpConnectorSettings | None) -> Settings:
+    if record is None:
+        return settings
+
+    return settings.model_copy(
+        update={
+            "mcp_connector_enabled": record.connector_enabled,
+            "mcp_write_tools_enabled": record.write_tools_enabled,
+            "mcp_audit_enabled": record.audit_enabled,
+            "mcp_auth_enabled": record.auth_enabled,
+            "mcp_auth_token": record.auth_token,
+            "mcp_allow_query_token": record.allow_query_token,
+            "mcp_server_name": record.server_name,
+        }
+    )
+
+
+def resolve_mcp_settings(db: Session, settings: Settings) -> Settings:
+    if settings.app_env == "test":
+        return settings
+
+    try:
+        return apply_mcp_settings(settings, get_mcp_connector_settings(db))
+    except SQLAlchemyError:
+        db.rollback()
+        return settings
+
+
+def get_or_create_mcp_connector_settings(
+    db: Session,
+    settings: Settings,
+) -> McpConnectorSettings:
+    record = get_mcp_connector_settings(db)
+
+    if record is not None:
+        return record
+
+    return save_mcp_connector_settings(db, create_mcp_settings_from_environment(settings))
+
+
+def to_mcp_settings_public(record: McpConnectorSettings) -> McpConnectorSettingsPublic:
+    return McpConnectorSettingsPublic(
+        connector_enabled=record.connector_enabled,
+        write_tools_enabled=record.write_tools_enabled,
+        audit_enabled=record.audit_enabled,
+        auth_enabled=record.auth_enabled,
+        auth_token_configured=has_secret(record.auth_token),
+        auth_token_preview=mask_secret(record.auth_token),
+        allow_query_token=record.allow_query_token,
+        server_name=record.server_name,
+        updated_at=record.updated_at,
+    )
+
+
+def update_mcp_connector_settings(
+    db: Session,
+    settings: Settings,
+    payload: McpConnectorSettingsUpdate,
+) -> McpConnectorSettings:
+    record = get_or_create_mcp_connector_settings(db, settings)
+    update_data = payload.model_dump(exclude_unset=True)
+
+    auth_token = update_data.pop("auth_token", None)
+    if auth_token is not None:
+        record.auth_token = auth_token
+
+    for field, value in update_data.items():
+        setattr(record, field, value)
+
+    if record.auth_enabled and not has_secret(record.auth_token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe um token MCP antes de ativar autenticacao.",
+        )
+
+    return save_mcp_connector_settings(db, record)
 
 
 def build_context_block(context: dict[str, str]) -> str:

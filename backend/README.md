@@ -164,12 +164,17 @@ GET  /api/v1/integrations/status
 POST /api/v1/integrations/ai/preview
 POST /api/v1/integrations/ai/generate
 POST /api/v1/integrations/whatsapp/preview
+GET  /api/v1/integrations/mcp/settings
+PATCH /api/v1/integrations/mcp/settings
 ```
 
-O modulo inicial mostra o status de configuracao para OpenAI, Claude e
-WhatsApp, alem de montar previews seguros de prompts e mensagens sem executar
-chamadas externas. O endpoint `ai/generate` executa a primeira chamada real ao
-Claude quando `ANTHROPIC_API_KEY` esta configurada, usando a Messages API.
+O modulo inicial mostra o status de configuracao para OpenAI, WhatsApp e MCP,
+alem de manter contratos para previews seguros de prompts e mensagens sem
+executar envios externos pela interface.
+
+As rotas de configuracao MCP exigem superadministrador. O token salvo nao e
+retornado em texto puro pela API; a tela mostra apenas se existe token e uma
+previa mascarada.
 
 ## MCP para Claude Pro
 
@@ -183,8 +188,9 @@ O servidor MCP inicia em modo seguro. Ele expoe ferramentas para consultar
 dashboard, leads abertos, contas vencidas e estoque critico. As ferramentas de
 leitura declaram `readOnlyHint=true` e `destructiveHint=false`.
 
-Para permitir acoes administrativas, use `MCP_WRITE_TOOLS_ENABLED=true`. Neste
-ciclo, as acoes liberadas sao:
+Para permitir acoes administrativas, ative as ferramentas de escrita na tela de
+Integracoes ou use `MCP_WRITE_TOOLS_ENABLED=true` como fallback inicial via
+ambiente. Neste ciclo, as acoes liberadas sao:
 
 ```text
 create_lead
@@ -207,12 +213,18 @@ GET /api/v1/integrations/mcp/audit-logs
 ```
 
 Cada chamada de ferramenta MCP registra ferramenta, argumentos, sucesso/erro,
-duracao, origem e resumo do resultado. A variavel `MCP_AUDIT_ENABLED=true`
-mantem essa trilha ativa.
+duracao, origem e resumo do resultado. A auditoria pode ser ligada pela tela de
+Integracoes ou por `MCP_AUDIT_ENABLED=true` como fallback de ambiente.
 
 Autenticacao por token:
 
+Configure pela tela de Integracoes como administrador do sistema. O `.env`
+continua funcionando como fallback inicial:
+
 ```env
+MCP_CONNECTOR_ENABLED=true
+MCP_WRITE_TOOLS_ENABLED=true
+MCP_AUDIT_ENABLED=true
 MCP_AUTH_ENABLED=true
 MCP_AUTH_TOKEN=troque_por_um_token_longo
 MCP_ALLOW_QUERY_TOKEN=true

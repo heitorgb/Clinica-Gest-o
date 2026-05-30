@@ -259,10 +259,6 @@ POST /api/v1/integrations/ai/generate
 POST /api/v1/integrations/whatsapp/preview
 ```
 
-A integracao com Claude usa `ANTHROPIC_API_KEY` no backend, chama a Messages
-API da Anthropic e mantem a chave fora do frontend. O primeiro fluxo real gera
-conteudo administrativo para revisao humana antes de qualquer envio externo.
-
 Conector MCP para Claude Pro:
 
 ```text
@@ -272,7 +268,7 @@ GET  /mcp -> 405, sem stream SSE neste ciclo
 
 O conector MCP expoe ferramentas read-only para dashboard, leads abertos,
 financeiro vencido e estoque critico. Ferramentas de escrita podem ser
-habilitadas com `MCP_WRITE_TOOLS_ENABLED=true`.
+habilitadas na tela de Integracoes por um administrador do sistema.
 
 Ferramentas de acao liberadas quando a flag esta ativa:
 
@@ -295,11 +291,24 @@ GET /api/v1/integrations/mcp/audit-logs
 ```
 
 O log registra ferramenta, argumentos, sucesso/erro, duracao, origem e resumo do
-resultado. A auditoria e controlada por `MCP_AUDIT_ENABLED=true`.
+resultado. A auditoria tambem e controlada pela tela de Integracoes.
 
-O Ciclo 9 adiciona autenticacao por token ao endpoint MCP. Para habilitar:
+A configuracao do MCP fica em:
+
+```text
+GET   /api/v1/integrations/mcp/settings
+PATCH /api/v1/integrations/mcp/settings
+```
+
+Essas rotas exigem superadministrador. O token salvo nao retorna em texto puro,
+apenas como status configurado e previa mascarada.
+
+O `.env` continua funcionando como fallback inicial:
 
 ```env
+MCP_CONNECTOR_ENABLED=true
+MCP_WRITE_TOOLS_ENABLED=true
+MCP_AUDIT_ENABLED=true
 MCP_AUTH_ENABLED=true
 MCP_AUTH_TOKEN=troque_por_um_token_longo
 MCP_ALLOW_QUERY_TOKEN=true

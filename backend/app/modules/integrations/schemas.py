@@ -1,9 +1,10 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-IntegrationProvider = Literal["openai", "anthropic", "whatsapp"]
-IntegrationCategory = Literal["ai", "messaging"]
+IntegrationProvider = Literal["openai", "whatsapp", "mcp"]
+IntegrationCategory = Literal["ai", "messaging", "connector"]
 IntegrationStatus = Literal["ready", "missing_config"]
 AiUseCase = Literal["lead_follow_up", "dashboard_insight", "financial_summary"]
 
@@ -18,6 +19,36 @@ class IntegrationProviderStatus(BaseModel):
 
 class IntegrationsStatus(BaseModel):
     providers: list[IntegrationProviderStatus]
+
+
+class McpConnectorSettingsPublic(BaseModel):
+    connector_enabled: bool
+    write_tools_enabled: bool
+    audit_enabled: bool
+    auth_enabled: bool
+    auth_token_configured: bool
+    auth_token_preview: str | None = None
+    allow_query_token: bool
+    server_name: str
+    updated_at: datetime | None = None
+
+
+class McpConnectorSettingsUpdate(BaseModel):
+    connector_enabled: bool | None = None
+    write_tools_enabled: bool | None = None
+    audit_enabled: bool | None = None
+    auth_enabled: bool | None = None
+    auth_token: str | None = Field(default=None, min_length=24, max_length=255)
+    allow_query_token: bool | None = None
+    server_name: str | None = Field(default=None, min_length=2, max_length=120)
+
+    @field_validator("auth_token", "server_name", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class AiPreviewRequest(BaseModel):

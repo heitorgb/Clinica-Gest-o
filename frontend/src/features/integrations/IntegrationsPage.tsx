@@ -2,22 +2,25 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  Copy,
   KeyRound,
   MessageCircle,
   PlugZap,
   RefreshCw,
+  Save,
   Send,
-  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { StatusPill } from "../../components/StatusPill";
 import { apiRequest } from "../../lib/api";
+import { appConfig } from "../../lib/env";
 import { useAuth } from "../auth/AuthContext";
+import { isAdmin } from "../auth/permissions";
 
-type IntegrationProvider = "openai" | "anthropic" | "whatsapp";
-type IntegrationCategory = "ai" | "messaging";
+type IntegrationProvider = "openai" | "whatsapp" | "mcp";
+type IntegrationCategory = "ai" | "messaging" | "connector";
 type IntegrationProviderStatus = {
   provider: IntegrationProvider;
   category: IntegrationCategory;
@@ -30,24 +33,28 @@ type IntegrationsStatus = {
   providers: IntegrationProviderStatus[];
 };
 
-type AiUseCase = "lead_follow_up" | "dashboard_insight" | "financial_summary";
+type McpConnectorSettings = {
+  connector_enabled: boolean;
+  write_tools_enabled: boolean;
+  audit_enabled: boolean;
+  auth_enabled: boolean;
+  auth_token_configured: boolean;
+  auth_token_preview: string | null;
+  allow_query_token: boolean;
+  server_name: string;
+  updated_at: string | null;
+};
 
-type AiGenerateResponse = {
-  provider: string;
-  use_case: string;
-  model: string;
-  generated_text: string;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  request_id: string | null;
+type McpConnectorForm = {
+  connector_enabled: boolean;
+  write_tools_enabled: boolean;
+  audit_enabled: boolean;
+  auth_enabled: boolean;
+  allow_query_token: boolean;
+  server_name: string;
 };
 
 const providerLabels: Record<IntegrationProvider, { detail: string; name: string; type: string }> = {
-  anthropic: {
-    name: "Claude",
-    type: "IA",
-    detail: "Chave configurada via ANTHROPIC_API_KEY",
-  },
   openai: {
     name: "OpenAI",
     type: "IA",
@@ -58,17 +65,17 @@ const providerLabels: Record<IntegrationProvider, { detail: string; name: string
     type: "Mensageria",
     detail: "Token configurado via WHATSAPP_API_TOKEN",
   },
+  mcp: {
+    name: "MCP Claude",
+    type: "Conector",
+    detail: "Configuracao administrada pelo sistema",
+  },
 };
 
 const providerIcons = {
   ai: Bot,
+  connector: PlugZap,
   messaging: MessageCircle,
-};
-
-const useCaseLabels: Record<AiUseCase, string> = {
-  dashboard_insight: "Resumo gerencial",
-  financial_summary: "Resumo financeiro",
-  lead_follow_up: "Follow-up comercial",
 };
 
 const automationIdeas = [
@@ -97,19 +104,41 @@ function providerStatusLabel(provider: IntegrationProviderStatus) {
   return provider.configured ? "Pronto" : "Pendente";
 }
 
+function toMcpForm(settings: McpConnectorSettings): McpConnectorForm {
+  return {
+    connector_enabled: settings.connector_enabled,
+    write_tools_enabled: settings.write_tools_enabled,
+    audit_enabled: settings.audit_enabled,
+    auth_enabled: settings.auth_enabled,
+    allow_query_token: settings.allow_query_token,
+    server_name: settings.server_name,
+  };
+}
+
+function generateToken() {
+  const bytes = new Uint8Array(48);
+  window.crypto.getRandomValues(bytes);
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function getMcpBaseUrl() {
+  return `${appConfig.apiBaseUrl.replace(/\/api\/v1\/?$/, "")}/mcp`;
+}
+
 export function IntegrationsPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
+  const canManageMcp = isAdmin(user);
   const [providers, setProviders] = useState<IntegrationProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [useCase, setUseCase] = useState<AiUseCase>("dashboard_insight");
-  const [instruction, setInstruction] = useState(
-    "Resuma os principais riscos comerciais, financeiros e de estoque para revisao humana.",
-  );
-  const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<AiGenerateResponse | null>(null);
+  const [mcpSettings, setMcpSettings] = useState<McpConnectorSettings | null>(null);
+  const [mcpForm, setMcpForm] = useState<McpConnectorForm | null>(null);
+  const [newMcpToken, setNewMcpToken] = useState("");
+  const [savingMcp, setSavingMcp] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [mcpSuccess, setMcpSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -127,8 +156,18 @@ export function IntegrationsPage() {
           token: accessToken,
         });
 
+        const connectorSettings = canManageMcp
+          ? await apiRequest<McpConnectorSettings>("/integrations/mcp/settings", {
+              token: accessToken,
+            })
+          : null;
+
         if (active) {
           setProviders(data.providers);
+          if (connectorSettings) {
+            setMcpSettings(connectorSettings);
+            setMcpForm(toMcpForm(connectorSettings));
+          }
           setError(null);
         }
       } catch (requestError) {
@@ -151,60 +190,92 @@ export function IntegrationsPage() {
     return () => {
       active = false;
     };
-  }, [accessToken, reloadKey]);
+  }, [accessToken, canManageMcp, reloadKey]);
 
-  const anthropicProvider = useMemo(
-    () => providers.find((provider) => provider.provider === "anthropic"),
-    [providers],
-  );
-  const canGenerateWithClaude = Boolean(anthropicProvider?.configured);
+  const mcpConnectorUrl = useMemo(() => {
+    const baseUrl = getMcpBaseUrl();
+    const token = newMcpToken.trim();
+
+    if (mcpForm?.auth_enabled && mcpForm.allow_query_token && token) {
+      return `${baseUrl}?token=${encodeURIComponent(token)}`;
+    }
+
+    return baseUrl;
+  }, [mcpForm?.allow_query_token, mcpForm?.auth_enabled, newMcpToken]);
 
   function refreshIntegrations() {
     setReloadKey((current) => current + 1);
-    setGenerateError(null);
+    setMcpError(null);
+    setMcpSuccess(null);
   }
 
-  async function handleGenerate(event: FormEvent<HTMLFormElement>) {
+  function updateMcpForm<K extends keyof McpConnectorForm>(field: K, value: McpConnectorForm[K]) {
+    setMcpForm((current) => (current ? { ...current, [field]: value } : current));
+    setMcpSuccess(null);
+  }
+
+  async function handleSaveMcp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!accessToken || !canGenerateWithClaude) {
+    if (!accessToken || !mcpForm) {
       return;
     }
 
-    setGenerating(true);
-    setGenerateError(null);
-    setGenerated(null);
+    if (mcpForm.auth_enabled && !mcpSettings?.auth_token_configured && !newMcpToken.trim()) {
+      setMcpError("Informe ou gere um token antes de ativar a autenticacao do MCP.");
+      return;
+    }
+
+    setSavingMcp(true);
+    setMcpError(null);
+    setMcpSuccess(null);
 
     try {
-      const response = await apiRequest<AiGenerateResponse>("/integrations/ai/generate", {
-        method: "POST",
+      const payload: Record<string, unknown> = { ...mcpForm };
+
+      if (newMcpToken.trim()) {
+        payload.auth_token = newMcpToken.trim();
+      }
+
+      const response = await apiRequest<McpConnectorSettings>("/integrations/mcp/settings", {
+        method: "PATCH",
         token: accessToken,
-        body: JSON.stringify({
-          provider: "anthropic",
-          use_case: useCase,
-          instruction,
-          context: {},
-          max_tokens: 512,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      setGenerated(response);
+      setMcpSettings(response);
+      setMcpForm(toMcpForm(response));
+      setNewMcpToken("");
+      setMcpSuccess("Configuracao MCP salva.");
+      setReloadKey((current) => current + 1);
     } catch (requestError) {
-      setGenerateError(
+      setMcpError(
         requestError instanceof Error
           ? requestError.message
-          : "Nao foi possivel gerar resposta com Claude.",
+          : "Nao foi possivel salvar o conector MCP.",
       );
     } finally {
-      setGenerating(false);
+      setSavingMcp(false);
     }
+  }
+
+  async function copyMcpUrl() {
+    const baseUrl = getMcpBaseUrl();
+    const token = newMcpToken.trim();
+    const url =
+      mcpForm?.auth_enabled && mcpForm.allow_query_token && token
+        ? `${baseUrl}?token=${encodeURIComponent(token)}`
+        : baseUrl;
+
+    await window.navigator.clipboard.writeText(url);
+    setMcpSuccess("URL do conector copiada.");
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Integracoes"
-        description="IA, WhatsApp e automacoes futuras"
+        description="Conectores, WhatsApp e automacoes futuras"
         actions={
           <button
             type="button"
@@ -258,96 +329,180 @@ export function IntegrationsPage() {
         ) : null}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      {canManageMcp && mcpForm ? (
         <form
           className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel"
-          onSubmit={handleGenerate}
+          onSubmit={handleSaveMcp}
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-ink-900">Claude</h2>
-              <p className="mt-1 text-sm text-slate-500">Geracao administrativa com revisao humana</p>
-            </div>
-            <Bot aria-hidden="true" className="text-emerald-600" size={22} />
-          </div>
-
-          {!canGenerateWithClaude ? (
-            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Configure ANTHROPIC_API_KEY no ambiente para liberar a chamada real ao Claude.
-            </p>
-          ) : null}
-
-          <label className="mt-4 block">
-            <span className="text-sm font-medium text-slate-700">Caso de uso</span>
-            <select
-              className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-emerald-500"
-              value={useCase}
-              onChange={(event) => setUseCase(event.target.value as AiUseCase)}
-            >
-              {Object.entries(useCaseLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="mt-4 block">
-            <span className="text-sm font-medium text-slate-700">Instrucao</span>
-            <textarea
-              className="mt-2 min-h-28 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-emerald-500"
-              value={instruction}
-              onChange={(event) => setInstruction(event.target.value)}
-              maxLength={1000}
-              required
-            />
-          </label>
-
-          {generateError ? (
-            <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {generateError}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={!canGenerateWithClaude || generating}
-            className="focus-ring mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
-          >
-            <Send aria-hidden="true" size={17} />
-            {generating ? "Gerando" : "Gerar com Claude"}
-          </button>
-        </form>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-ink-900">Resposta gerada</h2>
-              <p className="mt-1 text-sm text-slate-500">Conteudo para revisao antes de qualquer uso</p>
-            </div>
-            <ShieldCheck aria-hidden="true" className="text-sky-600" size={22} />
-          </div>
-
-          {generated ? (
-            <div className="mt-4 space-y-3">
-              <p className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-ink-900">
-                {generated.generated_text}
+              <h2 className="text-base font-semibold text-ink-900">Conector MCP</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Credenciais e permissoes para uso pelo Claude
               </p>
-              <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
-                <p>Modelo: {generated.model}</p>
-                <p>
-                  Tokens: {generated.input_tokens ?? "-"} entrada /{" "}
-                  {generated.output_tokens ?? "-"} saida
-                </p>
+            </div>
+            <PlugZap aria-hidden="true" className="text-emerald-600" size={22} />
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+              <span>
+                <span className="block text-sm font-medium text-ink-900">Conector ativo</span>
+                <span className="block text-xs text-slate-500">Libera o endpoint /mcp</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={mcpForm.connector_enabled}
+                onChange={(event) => updateMcpForm("connector_enabled", event.target.checked)}
+                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+              <span>
+                <span className="block text-sm font-medium text-ink-900">Ferramentas de escrita</span>
+                <span className="block text-xs text-slate-500">Permite criar e atualizar dados</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={mcpForm.write_tools_enabled}
+                onChange={(event) => updateMcpForm("write_tools_enabled", event.target.checked)}
+                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+              <span>
+                <span className="block text-sm font-medium text-ink-900">Auditoria</span>
+                <span className="block text-xs text-slate-500">Registra chamadas do conector</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={mcpForm.audit_enabled}
+                onChange={(event) => updateMcpForm("audit_enabled", event.target.checked)}
+                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+              <span>
+                <span className="block text-sm font-medium text-ink-900">Autenticacao</span>
+                <span className="block text-xs text-slate-500">Exige token para acessar</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={mcpForm.auth_enabled}
+                onChange={(event) => updateMcpForm("auth_enabled", event.target.checked)}
+                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+              <span>
+                <span className="block text-sm font-medium text-ink-900">Token na URL</span>
+                <span className="block text-xs text-slate-500">Aceita ?token= no conector</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={mcpForm.allow_query_token}
+                onChange={(event) => updateMcpForm("allow_query_token", event.target.checked)}
+                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="block rounded-lg border border-slate-200 px-3 py-2">
+              <span className="text-sm font-medium text-ink-900">Nome do servidor</span>
+              <input
+                type="text"
+                value={mcpForm.server_name}
+                onChange={(event) => updateMcpForm("server_name", event.target.value)}
+                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                maxLength={120}
+                required
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Novo token MCP</span>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={newMcpToken}
+                  onChange={(event) => {
+                    setNewMcpToken(event.target.value);
+                    setMcpSuccess(null);
+                  }}
+                  placeholder={
+                    mcpSettings?.auth_token_configured
+                      ? `Token atual: ${mcpSettings.auth_token_preview}`
+                      : "cole ou gere um token longo"
+                  }
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMcpToken(generateToken());
+                    setMcpSuccess("Token gerado. Copie a URL antes de salvar.");
+                  }}
+                  className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-ink-900 hover:bg-slate-50"
+                >
+                  <KeyRound aria-hidden="true" size={16} />
+                  Gerar
+                </button>
+              </div>
+            </label>
+
+            <div>
+              <span className="text-sm font-medium text-slate-700">URL para cadastrar no Claude</span>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={mcpConnectorUrl}
+                  readOnly
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void copyMcpUrl()}
+                  className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-ink-900 hover:bg-slate-50"
+                >
+                  <Copy aria-hidden="true" size={16} />
+                  Copiar
+                </button>
               </div>
             </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-              A resposta do Claude aparecera aqui depois da geracao.
-            </div>
-          )}
-        </div>
-      </section>
+          </div>
+
+          {mcpError ? (
+            <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {mcpError}
+            </p>
+          ) : null}
+
+          {mcpSuccess ? (
+            <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {mcpSuccess}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              Apenas administradores podem alterar estas configuracoes.
+            </p>
+            <button
+              type="submit"
+              disabled={savingMcp}
+              className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
+            >
+              <Save aria-hidden="true" size={17} />
+              {savingMcp ? "Salvando" : "Salvar MCP"}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
@@ -390,10 +545,10 @@ export function IntegrationsPage() {
             <article className="rounded-lg border border-slate-200 p-3">
               <div className="flex items-center gap-3">
                 <KeyRound aria-hidden="true" className="text-slate-500" size={18} />
-                <p className="text-sm font-medium text-ink-900">Credenciais ficam no ambiente</p>
+                <p className="text-sm font-medium text-ink-900">Credenciais protegidas</p>
               </div>
               <p className="mt-2 text-sm text-slate-500">
-                As chaves sao lidas de variaveis `.env` e nao aparecem nas respostas da API.
+                O token MCP e configurado por administradores e nunca retorna em texto puro pela API.
               </p>
             </article>
             <article className="rounded-lg border border-slate-200 p-3">

@@ -1,7 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.mcp.models import McpAuditLog
+from app.modules.mcp.models import McpAuditLog, McpConnectorSettings
+
+DEFAULT_MCP_SETTINGS_SCOPE = "default"
 
 
 def create_mcp_audit_log(db: Session, audit_log: McpAuditLog) -> McpAuditLog:
@@ -33,3 +35,20 @@ def list_mcp_audit_logs(
 
     statement = statement.offset(skip).limit(limit)
     return list(db.execute(statement).scalars().all())
+
+
+def get_mcp_connector_settings(db: Session) -> McpConnectorSettings | None:
+    statement = select(McpConnectorSettings).where(
+        McpConnectorSettings.scope == DEFAULT_MCP_SETTINGS_SCOPE
+    )
+    return db.execute(statement).scalar_one_or_none()
+
+
+def save_mcp_connector_settings(
+    db: Session,
+    settings: McpConnectorSettings,
+) -> McpConnectorSettings:
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings

@@ -43,9 +43,8 @@ def test_integrations_status_uses_env_configuration() -> None:
 
     assert providers["openai"].configured
     assert providers["openai"].status == "ready"
-    assert not providers["anthropic"].configured
-    assert providers["anthropic"].status == "missing_config"
     assert providers["whatsapp"].configured
+    assert providers["mcp"].configured
 
 
 def test_ai_preview_builds_safe_prompt_without_calling_provider() -> None:
