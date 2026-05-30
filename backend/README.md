@@ -216,7 +216,7 @@ Cada chamada de ferramenta MCP registra ferramenta, argumentos, sucesso/erro,
 duracao, origem e resumo do resultado. A auditoria pode ser ligada pela tela de
 Integracoes ou por `MCP_AUDIT_ENABLED=true` como fallback de ambiente.
 
-Autenticacao por token:
+Autenticacao OAuth para Claude:
 
 Configure pela tela de Integracoes como administrador do sistema. O `.env`
 continua funcionando como fallback inicial:
@@ -226,13 +226,11 @@ MCP_CONNECTOR_ENABLED=true
 MCP_WRITE_TOOLS_ENABLED=true
 MCP_AUDIT_ENABLED=true
 MCP_AUTH_ENABLED=true
-MCP_AUTH_TOKEN=troque_por_um_token_longo
-MCP_ALLOW_QUERY_TOKEN=true
 ```
 
-O endpoint aceita `Authorization: Bearer`, `X-MCP-Token` e, quando
-`MCP_ALLOW_QUERY_TOKEN=true`, `?token=...`. OAuth sera a evolucao recomendada
-para ambientes com varios usuarios.
+O Claude usa OAuth para conectores remotos. O cadastro deve usar a URL limpa
+`https://seu-dominio/mcp`; o Claude abrira `/oauth/authorize`, onde um
+administrador da clinica autoriza o acesso.
 
 Para conectar no Claude Pro, o backend precisa estar publicado com HTTPS em uma
 URL acessivel pela internet, por exemplo `https://seu-dominio/mcp`. Depois use

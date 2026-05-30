@@ -300,8 +300,7 @@ GET   /api/v1/integrations/mcp/settings
 PATCH /api/v1/integrations/mcp/settings
 ```
 
-Essas rotas exigem superadministrador. O token salvo nao retorna em texto puro,
-apenas como status configurado e previa mascarada.
+Essas rotas exigem superadministrador.
 
 O `.env` continua funcionando como fallback inicial:
 
@@ -310,13 +309,11 @@ MCP_CONNECTOR_ENABLED=true
 MCP_WRITE_TOOLS_ENABLED=true
 MCP_AUDIT_ENABLED=true
 MCP_AUTH_ENABLED=true
-MCP_AUTH_TOKEN=troque_por_um_token_longo
-MCP_ALLOW_QUERY_TOKEN=true
 ```
 
-O token pode ser enviado por `Authorization: Bearer`, `X-MCP-Token` ou, para
-conectores que so aceitam URL, como `?token=...`. Para producao definitiva,
-OAuth continua sendo o caminho recomendado.
+O Claude usa OAuth para autenticar conectores remotos. Ao cadastrar o conector,
+use apenas a URL limpa `https://seu-dominio/mcp`; o Claude abrira a tela de
+login da clinica e o acesso deve ser autorizado por um administrador.
 
 Para usar no Claude Pro, publique o backend com HTTPS e cadastre a URL
 `https://seu-dominio/mcp` em Customize > Connectors > Add custom connector. Em

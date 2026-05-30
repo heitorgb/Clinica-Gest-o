@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import Settings, get_settings
 from app.core.router import api_router
+from app.modules.mcp.oauth_router import router as mcp_oauth_router
 from app.modules.mcp.router import router as mcp_router
 
 
@@ -29,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    app.include_router(mcp_oauth_router)
     app.include_router(mcp_router)
 
     return app

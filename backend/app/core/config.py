@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     app_name: str = "Clinica Gestao API"
     app_env: str = "local"
     app_debug: bool = False
+    public_app_url: str | None = None
+    public_api_url: str | None = None
 
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(
@@ -44,6 +46,8 @@ class Settings(BaseSettings):
     mcp_auth_token: str | None = None
     mcp_allow_query_token: bool = True
     mcp_server_name: str = "clinica-gestao"
+    mcp_oauth_access_token_expire_minutes: int = 60
+    mcp_oauth_refresh_token_expire_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

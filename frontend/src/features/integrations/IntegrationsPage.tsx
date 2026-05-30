@@ -115,13 +115,6 @@ function toMcpForm(settings: McpConnectorSettings): McpConnectorForm {
   };
 }
 
-function generateToken() {
-  const bytes = new Uint8Array(48);
-  window.crypto.getRandomValues(bytes);
-  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
-  return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function getMcpBaseUrl() {
   return `${appConfig.apiBaseUrl.replace(/\/api\/v1\/?$/, "")}/mcp`;
 }
@@ -133,10 +126,7 @@ export function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [mcpSettings, setMcpSettings] = useState<McpConnectorSettings | null>(null);
   const [mcpForm, setMcpForm] = useState<McpConnectorForm | null>(null);
-  const [newMcpToken, setNewMcpToken] = useState("");
-  const [recentMcpToken, setRecentMcpToken] = useState("");
   const [savingMcp, setSavingMcp] = useState(false);
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [mcpSuccess, setMcpSuccess] = useState<string | null>(null);
@@ -166,7 +156,6 @@ export function IntegrationsPage() {
         if (active) {
           setProviders(data.providers);
           if (connectorSettings) {
-            setMcpSettings(connectorSettings);
             setMcpForm(toMcpForm(connectorSettings));
           }
           setError(null);
@@ -193,16 +182,7 @@ export function IntegrationsPage() {
     };
   }, [accessToken, canManageMcp, reloadKey]);
 
-  const mcpConnectorUrl = useMemo(() => {
-    const baseUrl = getMcpBaseUrl();
-    const token = newMcpToken.trim() || recentMcpToken.trim();
-
-    if (mcpForm?.auth_enabled && mcpForm.allow_query_token && token) {
-      return `${baseUrl}?token=${encodeURIComponent(token)}`;
-    }
-
-    return baseUrl;
-  }, [mcpForm?.allow_query_token, mcpForm?.auth_enabled, newMcpToken, recentMcpToken]);
+  const mcpConnectorUrl = useMemo(() => getMcpBaseUrl(), []);
 
   function refreshIntegrations() {
     setReloadKey((current) => current + 1);
@@ -222,22 +202,12 @@ export function IntegrationsPage() {
       return;
     }
 
-    if (mcpForm.auth_enabled && !mcpSettings?.auth_token_configured && !newMcpToken.trim()) {
-      setMcpError("Informe ou gere um token antes de ativar a autenticacao do MCP.");
-      return;
-    }
-
     setSavingMcp(true);
     setMcpError(null);
     setMcpSuccess(null);
 
     try {
       const payload: Record<string, unknown> = { ...mcpForm };
-      const tokenToSave = newMcpToken.trim();
-
-      if (tokenToSave) {
-        payload.auth_token = tokenToSave;
-      }
 
       const response = await apiRequest<McpConnectorSettings>("/integrations/mcp/settings", {
         method: "PATCH",
@@ -245,15 +215,8 @@ export function IntegrationsPage() {
         body: JSON.stringify(payload),
       });
 
-      setMcpSettings(response);
       setMcpForm(toMcpForm(response));
-      setRecentMcpToken(tokenToSave);
-      setNewMcpToken("");
-      setMcpSuccess(
-        tokenToSave
-          ? "Configuracao MCP salva. A URL com token continua disponivel para copiar."
-          : "Configuracao MCP salva.",
-      );
+      setMcpSuccess("Configuracao MCP salva.");
       setReloadKey((current) => current + 1);
     } catch (requestError) {
       setMcpError(
@@ -267,21 +230,7 @@ export function IntegrationsPage() {
   }
 
   async function copyMcpUrl() {
-    const baseUrl = getMcpBaseUrl();
-    const token = newMcpToken.trim() || recentMcpToken.trim();
-
-    if (mcpForm?.auth_enabled && mcpForm.allow_query_token && !token) {
-      setMcpError("Gere um novo token para copiar a URL completa do Claude.");
-      setMcpSuccess(null);
-      return;
-    }
-
-    const url =
-      mcpForm?.auth_enabled && mcpForm.allow_query_token && token
-        ? `${baseUrl}?token=${encodeURIComponent(token)}`
-        : baseUrl;
-
-    await window.navigator.clipboard.writeText(url);
+    await window.navigator.clipboard.writeText(mcpConnectorUrl);
     setMcpSuccess("URL do conector copiada.");
   }
 
@@ -400,26 +349,13 @@ export function IntegrationsPage() {
 
             <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
               <span>
-                <span className="block text-sm font-medium text-ink-900">Autenticacao</span>
-                <span className="block text-xs text-slate-500">Exige token para acessar</span>
+                <span className="block text-sm font-medium text-ink-900">Autenticacao OAuth</span>
+                <span className="block text-xs text-slate-500">Claude abre login da clinica</span>
               </span>
               <input
                 type="checkbox"
                 checked={mcpForm.auth_enabled}
                 onChange={(event) => updateMcpForm("auth_enabled", event.target.checked)}
-                className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-            </label>
-
-            <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
-              <span>
-                <span className="block text-sm font-medium text-ink-900">Token na URL</span>
-                <span className="block text-xs text-slate-500">Aceita ?token= no conector</span>
-              </span>
-              <input
-                type="checkbox"
-                checked={mcpForm.allow_query_token}
-                onChange={(event) => updateMcpForm("allow_query_token", event.target.checked)}
                 className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               />
             </label>
@@ -437,41 +373,7 @@ export function IntegrationsPage() {
             </label>
           </div>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Novo token MCP</span>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  value={newMcpToken}
-                  onChange={(event) => {
-                    setNewMcpToken(event.target.value);
-                    setRecentMcpToken("");
-                    setMcpSuccess(null);
-                  }}
-                  placeholder={
-                    mcpSettings?.auth_token_configured
-                      ? `Token atual: ${mcpSettings.auth_token_preview}`
-                      : "cole ou gere um token longo"
-                  }
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const token = generateToken();
-                    setNewMcpToken(token);
-                    setRecentMcpToken(token);
-                    setMcpSuccess("Token gerado. Salve e copie a URL para cadastrar no Claude.");
-                  }}
-                  className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-ink-900 hover:bg-slate-50"
-                >
-                  <KeyRound aria-hidden="true" size={16} />
-                  Gerar
-                </button>
-              </div>
-            </label>
-
+          <div className="mt-4 grid gap-4">
             <div>
               <span className="text-sm font-medium text-slate-700">URL para cadastrar no Claude</span>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -490,6 +392,10 @@ export function IntegrationsPage() {
                   Copiar
                 </button>
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Cadastre apenas essa URL. O Claude fara a autenticacao OAuth abrindo a tela de
+                login da clinica.
+              </p>
             </div>
           </div>
 
@@ -565,7 +471,7 @@ export function IntegrationsPage() {
                 <p className="text-sm font-medium text-ink-900">Credenciais protegidas</p>
               </div>
               <p className="mt-2 text-sm text-slate-500">
-                O token MCP e configurado por administradores e nunca retorna em texto puro pela API.
+                O Claude usa OAuth e so administradores podem autorizar o conector.
               </p>
             </article>
             <article className="rounded-lg border border-slate-200 p-3">

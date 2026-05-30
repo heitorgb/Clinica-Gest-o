@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.modules.integrations.service import resolve_mcp_settings
+from app.modules.mcp.oauth import external_base_url
 from app.modules.mcp.service import (
     handle_mcp_request,
     is_mcp_request_authorized,
@@ -32,19 +33,10 @@ async def mcp_endpoint(
 
     remote_addr = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
-
-    if mcp_settings.mcp_auth_enabled and not mcp_settings.mcp_auth_token:
-        record_mcp_auth_failure(
-            db,
-            mcp_settings,
-            reason="MCP auth enabled without token.",
-            remote_addr=remote_addr,
-            user_agent=user_agent,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MCP authentication is not configured.",
-        )
+    auth_header = (
+        f'Bearer resource_metadata="{external_base_url(request, settings)}'
+        '/.well-known/oauth-protected-resource/mcp"'
+    )
 
     if not is_mcp_request_authorized(
         mcp_settings,
@@ -62,7 +54,7 @@ async def mcp_endpoint(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid MCP token.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": auth_header},
         )
 
     try:

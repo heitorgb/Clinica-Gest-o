@@ -29,6 +29,7 @@ from app.modules.inventory.service import (
     list_inventory_items_page,
 )
 from app.modules.mcp.models import McpAuditLog
+from app.modules.mcp.oauth import is_valid_mcp_oauth_token
 from app.modules.mcp.repository import create_mcp_audit_log
 from app.modules.performance.schemas import CommissionCreate, CommissionUpdate
 from app.modules.performance.service import (
@@ -429,12 +430,16 @@ def is_mcp_request_authorized(
     if not settings.mcp_auth_enabled:
         return True
 
+    bearer_token = extract_bearer_token(authorization)
+    if is_valid_mcp_oauth_token(bearer_token):
+        return True
+
     expected_token = settings.mcp_auth_token.strip() if settings.mcp_auth_token else ""
     if not expected_token:
         return False
 
     candidates = [
-        extract_bearer_token(authorization),
+        bearer_token,
         header_token.strip() if header_token else None,
     ]
 

@@ -7,7 +7,7 @@ from pwdlib import PasswordHash
 
 from app.core.config import get_settings
 
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "mcp_access"]
 
 password_hash = PasswordHash.recommended()
 
@@ -70,7 +70,7 @@ def decode_token(token: str) -> dict[str, Any]:
     if not isinstance(payload.get("sub"), str):
         raise ValueError("Token sem sujeito valido")
 
-    if payload.get("type") not in {"access", "refresh"}:
+    if payload.get("type") not in {"access", "refresh", "mcp_access"}:
         raise ValueError("Tipo de token invalido")
 
     return payload
