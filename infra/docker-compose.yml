@@ -46,7 +46,7 @@ services:
       MCP_ALLOW_QUERY_TOKEN: ${MCP_ALLOW_QUERY_TOKEN:-true}
       MCP_SERVER_NAME: ${MCP_SERVER_NAME:-clinica-gestao}
     ports:
-      - "${BACKEND_PORT:-8008}:8008"
+      - "${BACKEND_PORT:-8008}:8000"
     volumes:
       - ../backend/app:/app/app
       - ../backend/alembic:/app/alembic
@@ -68,7 +68,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-clinica}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinica_dev_password}
     ports:
-      - "${POSTGRES_PORT:-5434}:5434"
+      - "${POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
