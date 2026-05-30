@@ -136,6 +136,7 @@ export function IntegrationsPage() {
   const [mcpSettings, setMcpSettings] = useState<McpConnectorSettings | null>(null);
   const [mcpForm, setMcpForm] = useState<McpConnectorForm | null>(null);
   const [newMcpToken, setNewMcpToken] = useState("");
+  const [recentMcpToken, setRecentMcpToken] = useState("");
   const [savingMcp, setSavingMcp] = useState(false);
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [mcpSuccess, setMcpSuccess] = useState<string | null>(null);
@@ -194,14 +195,14 @@ export function IntegrationsPage() {
 
   const mcpConnectorUrl = useMemo(() => {
     const baseUrl = getMcpBaseUrl();
-    const token = newMcpToken.trim();
+    const token = newMcpToken.trim() || recentMcpToken.trim();
 
     if (mcpForm?.auth_enabled && mcpForm.allow_query_token && token) {
       return `${baseUrl}?token=${encodeURIComponent(token)}`;
     }
 
     return baseUrl;
-  }, [mcpForm?.allow_query_token, mcpForm?.auth_enabled, newMcpToken]);
+  }, [mcpForm?.allow_query_token, mcpForm?.auth_enabled, newMcpToken, recentMcpToken]);
 
   function refreshIntegrations() {
     setReloadKey((current) => current + 1);
@@ -232,9 +233,10 @@ export function IntegrationsPage() {
 
     try {
       const payload: Record<string, unknown> = { ...mcpForm };
+      const tokenToSave = newMcpToken.trim();
 
-      if (newMcpToken.trim()) {
-        payload.auth_token = newMcpToken.trim();
+      if (tokenToSave) {
+        payload.auth_token = tokenToSave;
       }
 
       const response = await apiRequest<McpConnectorSettings>("/integrations/mcp/settings", {
@@ -245,8 +247,13 @@ export function IntegrationsPage() {
 
       setMcpSettings(response);
       setMcpForm(toMcpForm(response));
+      setRecentMcpToken(tokenToSave);
       setNewMcpToken("");
-      setMcpSuccess("Configuracao MCP salva.");
+      setMcpSuccess(
+        tokenToSave
+          ? "Configuracao MCP salva. A URL com token continua disponivel para copiar."
+          : "Configuracao MCP salva.",
+      );
       setReloadKey((current) => current + 1);
     } catch (requestError) {
       setMcpError(
@@ -261,7 +268,14 @@ export function IntegrationsPage() {
 
   async function copyMcpUrl() {
     const baseUrl = getMcpBaseUrl();
-    const token = newMcpToken.trim();
+    const token = newMcpToken.trim() || recentMcpToken.trim();
+
+    if (mcpForm?.auth_enabled && mcpForm.allow_query_token && !token) {
+      setMcpError("Gere um novo token para copiar a URL completa do Claude.");
+      setMcpSuccess(null);
+      return;
+    }
+
     const url =
       mcpForm?.auth_enabled && mcpForm.allow_query_token && token
         ? `${baseUrl}?token=${encodeURIComponent(token)}`
@@ -432,6 +446,7 @@ export function IntegrationsPage() {
                   value={newMcpToken}
                   onChange={(event) => {
                     setNewMcpToken(event.target.value);
+                    setRecentMcpToken("");
                     setMcpSuccess(null);
                   }}
                   placeholder={
@@ -444,8 +459,10 @@ export function IntegrationsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setNewMcpToken(generateToken());
-                    setMcpSuccess("Token gerado. Copie a URL antes de salvar.");
+                    const token = generateToken();
+                    setNewMcpToken(token);
+                    setRecentMcpToken(token);
+                    setMcpSuccess("Token gerado. Salve e copie a URL para cadastrar no Claude.");
                   }}
                   className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-ink-900 hover:bg-slate-50"
                 >
